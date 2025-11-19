@@ -1,0 +1,7 @@
+wrangler-local-state
+dist
+.wrangler
+node_modules
+.env
+.nix-node
+.dev.vars
