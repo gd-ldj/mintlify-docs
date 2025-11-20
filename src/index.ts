@@ -146,12 +146,20 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
         t.replace(updated);
       },
     })
-    .on('script', {
-      text(t) {
-        const updated = t.text.replace(/mintlify/gi, 'tadle');
-        t.replace(updated);
-      },
-    })
+  .on('script', {
+    element(el) {
+      const id = el.getAttribute('id') || '';
+      const src = el.getAttribute('src') || '';
+      if (/mintlify/i.test(id) || /mintlify/i.test(src)) {
+        el.remove();
+        return;
+      }
+    },
+    text(t) {
+      const updated = t.text.replace(/mintlify/gi, 'tadle');
+      t.replace(updated);
+    },
+  })
     .on('style', {
       text(t) {
         const updated = t.text.replace(/mintlify/gi, 'tadle');
