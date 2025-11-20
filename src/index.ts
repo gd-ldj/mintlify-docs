@@ -81,7 +81,15 @@ const LOGO_JPG_BASE64 =
 // Unified HTML rewrite to remove Mintlify branding and links in <head>
 function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
   const rewriter = new HTMLRewriter()
-    // Remove anchors linking to Mintlify domains entirely (avoid injecting mintlify text)
+    // Inject CSS to hide Mintlify branding anchors to avoid hydration mismatch
+    .on('head', {
+      element(el) {
+        // Use CSS escapes so page source does not literally contain "mintlify"
+        // \74 is the hex escape for the character 't'
+        el.append('<style>a[href*="min\\74lify"], [id*="min\\74lify"], [class*="min\\74lify"], [aria-label*="Min\\74lify"]{display:none!important}</style>', { html: true });
+      },
+    })
+    // Keep navigation within /docs prefix when linking to root-relative paths
     .on('a', {
       element(el) {
         const href = el.getAttribute('href') || '';
@@ -90,7 +98,7 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
         }
       },
     })
-    // Clean meta tags that expose Mintlify branding
+    // Clean meta tags that expose Mintlify branding and enforce og/twitter images
     .on('head meta', {
       element(el) {
         const name = (el.getAttribute('name') || '').toLowerCase();
@@ -146,20 +154,20 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
         t.replace(updated);
       },
     })
-  .on('script', {
-    element(el) {
-      const id = el.getAttribute('id') || '';
-      const src = el.getAttribute('src') || '';
-      if (/mintlify/i.test(id) || /mintlify/i.test(src)) {
-        el.remove();
-        return;
-      }
-    },
-    text(t) {
-      const updated = t.text.replace(/mintlify/gi, 'tadle');
-      t.replace(updated);
-    },
-  })
+    .on('script', {
+      element(el) {
+        const id = el.getAttribute('id') || '';
+        const src = el.getAttribute('src') || '';
+        if (/mintlify/i.test(id) || /mintlify/i.test(src)) {
+          el.remove();
+          return;
+        }
+      },
+      text(t) {
+        const updated = t.text.replace(/mintlify/gi, 'tadle');
+        t.replace(updated);
+      },
+    })
     .on('style', {
       text(t) {
         const updated = t.text.replace(/mintlify/gi, 'tadle');
@@ -247,7 +255,6 @@ app.get('/images/*', async (c) => {
     headers: upstreamRes.headers,
   });
 });
-
 
 // Serve local JPG branding asset for og/twitter image
 app.get('/assets/logo.jpg', async (c) => {
@@ -365,13 +372,7 @@ app.post('/_mintlify/api/request', async (c) => {
     if (!headers.has('accept')) headers.set('accept', 'application/json, */*');
 
     const hasBody = !['GET', 'HEAD'].includes(method);
-    const body = hasBody
-      ? typeof payload.body === 'string'
-        ? payload.body
-        : payload.body !== undefined
-        ? JSON.stringify(payload.body)
-        : undefined
-      : undefined;
+    const body = hasBody ? (typeof payload.body === 'string' ? payload.body : payload.body !== undefined ? JSON.stringify(payload.body) : undefined) : undefined;
 
     const upstreamRes = await fetch(targetUrl.toString(), { method, headers, body, redirect: 'follow' });
     return new Response(upstreamRes.body, { status: upstreamRes.status, headers: upstreamRes.headers });
