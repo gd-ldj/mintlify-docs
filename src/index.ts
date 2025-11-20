@@ -81,12 +81,9 @@ const LOGO_JPG_BASE64 =
 // Unified HTML rewrite to remove Mintlify branding and links in <head>
 function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
   const rewriter = new HTMLRewriter()
-    // Inject CSS to hide Mintlify branding anchors to avoid hydration mismatch
+    // Stop injecting CSS; removal is handled server-side and via client cleanup
     .on('head', {
       element(el) {
-        // Use CSS escapes so page source does not literally contain "mintlify"
-        // \74 is the hex escape for the character 't'
-        el.append('<style>a[href*="min\\74lify"], [id*="min\\74lify"], [class*="min\\74lify"], [aria-label*="Min\\74lify"]{display:none!important}</style>', { html: true });
       },
     })
     // Keep navigation within /docs prefix when linking to root-relative paths
@@ -177,7 +174,7 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
     // Inject a defensive script to hide/remove Mintlify elements after hydration
     .on('body', {
       element(el) {
-        const injected = `\n<script>(function(){\n  try{\n    var brand = String.fromCharCode(109,105,110,116,108,105,102,121);\n    function hide(){\n      try{\n        var sels = [\n          'script[src*="'+brand+'"]',\n          'script[id*="'+brand+'"]',\n          'a[href*="'+brand+'"]',\n          '[id*="'+brand+'"]',\n          '[class*="'+brand+'"]',\n          '[aria-label*="'+brand+'"]'\n        ];\n        for(var i=0;i<sels.length;i++){\n          var nodes = document.querySelectorAll(sels[i]);\n          for(var j=0;j<nodes.length;j++){\n            var n = nodes[j];\n            if(n.tagName==='SCRIPT'){ n.remove(); } else { n.style.display='none'; }\n          }\n        }\n        var scripts = document.getElementsByTagName('script');\n        for(var k=scripts.length-1;k>=0;k--){\n          var s = scripts[k];\n          var id = s.id||'';\n          var src = s.src||'';\n          var txt = s.textContent||'';\n          if(id.indexOf(brand)!==-1 || src.indexOf(brand)!==-1 || txt.indexOf(brand)!==-1){\n            s.remove();\n          }\n        }\n      }catch(e){}\n    }\n    hide();\n    if(document.readyState==='loading'){\n      document.addEventListener('DOMContentLoaded', hide);\n    } else {\n      queueMicrotask(hide);\n    }\n    var mo = new MutationObserver(function(){ hide(); });\n    mo.observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['id','class','href','aria-label','src'] });\n    setTimeout(hide, 50);\n    setTimeout(hide, 500);\n    setTimeout(hide, 1000);\n    setTimeout(hide, 3000);\n    setTimeout(hide, 10000);\n  }catch(e){}\n})();</script>\n`;
+        const injected = `\n<script>(function(){\n  try{\n    var brand = String.fromCharCode(109,105,110,116,108,105,102,121);\n    function hide(){\n      try{\n        var sels = [\n          'script[src*="'+brand+'"]',\n          'script[id*="'+brand+'"]',\n          'a[href*="'+brand+'"]',\n          '[id*="'+brand+'"]',\n          '[class*="'+brand+'"]',\n          '[aria-label*="'+brand+'"]'\n        ];\n        for(var i=0;i<sels.length;i++){\n          var nodes = document.querySelectorAll(sels[i]);\n          for(var j=0;j<nodes.length;j++){\n            var n = nodes[j];\n            n.remove();\n          }\n        }\n        var scripts = document.getElementsByTagName('script');\n        for(var k=scripts.length-1;k>=0;k--){\n          var s = scripts[k];\n          var id = s.id||'';\n          var src = s.src||'';\n          var txt = s.textContent||'';\n          if(id.indexOf(brand)!==-1 || src.indexOf(brand)!==-1 || txt.indexOf(brand)!==-1){\n            s.remove();\n          }\n        }\n      }catch(e){}\n    }\n    hide();\n    if(document.readyState==='loading'){\n      document.addEventListener('DOMContentLoaded', hide);\n    } else {\n      queueMicrotask(hide);\n    }\n    var mo = new MutationObserver(function(){ hide(); });\n    mo.observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['id','class','href','aria-label','src'] });\n    setTimeout(hide, 50);\n    setTimeout(hide, 500);\n    setTimeout(hide, 1000);\n    setTimeout(hide, 3000);\n    setTimeout(hide, 10000);\n  }catch(e){}\n})();</script>\n`;
         el.append(injected, { html: true });
       },
     });
