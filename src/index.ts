@@ -62,14 +62,7 @@ app.get('/', async (c) => {
     });
   }
 
-  const rewriter = new HTMLRewriter()
-    .on('head', {
-      element(el) {
-        el.append('<style>a[href*="mintlify"]{display:none!important}</style>', { html: true });
-      },
-    });
-
-  return rewriter.transform(upstreamRes);
+  return transformDocsHtml(upstreamRes, docsOrigin);
 });
 
 // --- Self-hosted docs proxy (experimental) ---
@@ -77,6 +70,97 @@ app.get('/', async (c) => {
 const DOCS_ORIGIN_DEFAULT = 'https://open-odds-docs.tadle.com';
 // Remote data source for wildcard API proxy (if used elsewhere)
 const DATA_ORIGIN_DEFAULT = 'https://open-odds-api.tadle.com';
+
+// Site name used to replace Mintlify branding within HTML head
+const SITE_NAME = 'Open Odds Open API';
+
+// Inline JPG (base64) served by the Worker for og/twitter images
+const LOGO_JPG_BASE64 =
+  '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';
+
+// Unified HTML rewrite to remove Mintlify branding and links in <head>
+function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
+  const rewriter = new HTMLRewriter()
+    // Remove anchors linking to Mintlify domains entirely (avoid injecting mintlify text)
+    .on('a', {
+      element(el) {
+        const href = el.getAttribute('href') || '';
+        if (/mintlify/i.test(href)) {
+          el.remove();
+        }
+      },
+    })
+    // Clean meta tags that expose Mintlify branding
+    .on('head meta', {
+      element(el) {
+        const name = (el.getAttribute('name') || '').toLowerCase();
+        const property = (el.getAttribute('property') || '').toLowerCase();
+        const content = el.getAttribute('content') || '';
+
+        // Always point og/twitter image to local asset
+        if (property === 'og:image' || name === 'twitter:image') {
+          el.setAttribute('content', '/assets/logo.jpg');
+          return;
+        }
+
+        if (/mintlify/i.test(content)) {
+          // Replace brand name with our site name for name-like metas
+          if (name === 'application-name' || name === 'apple-mobile-web-app-title' || property === 'og:site_name') {
+            el.setAttribute('content', SITE_NAME);
+            return;
+          }
+          // Remove image/url metas that point to Mintlify CDN/domains
+          if (property === 'og:image' || name === 'twitter:image' || property === 'og:url') {
+            el.remove();
+            return;
+          }
+          // Generic fallback: strip literal word "mintlify" from content
+          const replaced = content.replace(/mintlify/gi, '').trim();
+          if (replaced) {
+            el.setAttribute('content', replaced);
+          } else {
+            el.remove();
+          }
+        }
+      },
+    })
+    // Remove head links that reference Mintlify domains (branding assets/og generators)
+    .on('head link', {
+      element(el) {
+        const href = el.getAttribute('href') || '';
+        if (/mintlify/i.test(href)) {
+          el.remove();
+        }
+      },
+    })
+    // Replace remaining plain text occurrences in head/body and inlined scripts/styles
+    .on('head', {
+      text(t) {
+        const updated = t.text.replace(/mintlify/gi, SITE_NAME);
+        t.replace(updated);
+      },
+    })
+    .on('body', {
+      text(t) {
+        const updated = t.text.replace(/mintlify/gi, SITE_NAME);
+        t.replace(updated);
+      },
+    })
+    .on('script', {
+      text(t) {
+        const updated = t.text.replace(/mintlify/gi, 'tadle');
+        t.replace(updated);
+      },
+    })
+    .on('style', {
+      text(t) {
+        const updated = t.text.replace(/mintlify/gi, 'tadle');
+        t.replace(updated);
+      },
+    });
+
+  return rewriter.transform(upstreamRes);
+}
 
 // (moved below) Catch-all page proxy for docs under root
 
@@ -145,6 +229,18 @@ app.get('/images/*', async (c) => {
   return new Response(upstreamRes.body, {
     status: upstreamRes.status,
     headers: upstreamRes.headers,
+  });
+});
+
+
+// Serve local JPG branding asset for og/twitter image
+app.get('/assets/logo.jpg', async (c) => {
+  const bytes = Uint8Array.from(atob(LOGO_JPG_BASE64), (ch) => ch.charCodeAt(0));
+  return new Response(bytes, {
+    headers: {
+      'content-type': 'image/jpeg',
+      'cache-control': 'public, max-age=31536000, immutable',
+    },
   });
 });
 
@@ -303,14 +399,7 @@ app.get('/*', async (c) => {
     });
   }
 
-  const rewriter = new HTMLRewriter()
-    .on('head', {
-      element(el) {
-        el.append('<style>a[href*="mintlify"]{display:none!important}</style>', { html: true });
-      },
-    });
-
-  return rewriter.transform(upstreamRes);
+  return transformDocsHtml(upstreamRes, docsOrigin);
 });
 
 // 404 for everything else
