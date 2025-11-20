@@ -4,5 +4,5 @@ compatibility_date = "2024-10-01"
 
 [vars]
 # Configure upstream origins via environment
-DOCS_ORIGIN = "https://open-odds-api.tadle.com"
+DOCS_ORIGIN = "https://open-odds-docs.tadle.com"
 DATA_ORIGIN = "https://open-odds-api.tadle.com"

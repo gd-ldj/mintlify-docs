@@ -74,7 +74,7 @@ app.get('/', async (c) => {
 
 // --- Self-hosted docs proxy (experimental) ---
 // Proxies the Mintlify docs site. Origin configurable via environment.
-const DOCS_ORIGIN_DEFAULT = 'https://docs.odds.tadle.com';
+const DOCS_ORIGIN_DEFAULT = 'https://open-odds-docs.tadle.com';
 // Remote data source for wildcard API proxy (if used elsewhere)
 const DATA_ORIGIN_DEFAULT = 'https://open-odds-api.tadle.com';
 
