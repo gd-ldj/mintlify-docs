@@ -159,7 +159,15 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
       },
     });
 
-  return rewriter.transform(upstreamRes);
+  const transformed = rewriter.transform(upstreamRes);
+  const headers = new Headers(upstreamRes.headers);
+  // Prevent CDN/browser caching to ensure replacements are visible in production
+  headers.set('cache-control', 'no-store');
+  // Mark responses to help prod verification
+  headers.set('x-rewritten-by', 'open-odds-worker');
+  // Normalize content-type for HTML
+  if (!headers.get('content-type')) headers.set('content-type', 'text/html; charset=utf-8');
+  return new Response(transformed.body, { status: upstreamRes.status, headers });
 }
 
 // (moved below) Catch-all page proxy for docs under root
