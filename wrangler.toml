@@ -1,4 +1,4 @@
-name = "odds-open-api"
+name = "mintify"
 main = "src/index.ts"
 compatibility_date = "2024-10-01"
 
