@@ -173,6 +173,13 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
         const updated = t.text.replace(/mintlify/gi, 'tadle');
         t.replace(updated);
       },
+    })
+    // Inject a defensive script to hide/remove Mintlify elements after hydration
+    .on('body', {
+      element(el) {
+        const injected = `\n<script>(function(){\n  try{\n    var brand = String.fromCharCode(109,105,110,116,108,105,102,121);\n    function hide(){\n      try{\n        var sels = [\n          'a[href*="'+brand+'"]',\n          '[id*="'+brand+'"]',\n          '[class*="'+brand+'"]',\n          '[aria-label*="'+brand+'"]'\n        ];\n        for(var i=0;i<sels.length;i++){\n          var nodes = document.querySelectorAll(sels[i]);\n          for(var j=0;j<nodes.length;j++){\n            var n = nodes[j];\n            if(n.tagName==='SCRIPT'){ n.remove(); } else { n.style.display='none'; }\n          }\n        }\n      }catch(e){}\n    }\n    hide();\n    if(document.readyState==='loading'){\n      document.addEventListener('DOMContentLoaded', hide);\n    } else {\n      queueMicrotask(hide);\n    }\n    var mo = new MutationObserver(function(){ hide(); });\n    mo.observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['id','class','href','aria-label'] });\n    setTimeout(hide, 1000);\n    setTimeout(hide, 3000);\n  }catch(e){}\n})();</script>\n`;
+        el.append(injected, { html: true });
+      },
     });
 
   const transformed = rewriter.transform(upstreamRes);
