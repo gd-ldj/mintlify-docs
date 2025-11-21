@@ -45,14 +45,14 @@ app.doc('/doc', {
 app.get('/', async (c) => {
   const docsOrigin = c.env.DOCS_ORIGIN ?? DOCS_ORIGIN_DEFAULT;
   const upstreamUrl = new URL(docsOrigin + '/');
-
-  const upstreamReqHeaders: Record<string, string> = {};
-  const ua = c.req.header('user-agent');
-  if (ua) upstreamReqHeaders['user-agent'] = ua;
-  const accept = c.req.header('accept');
-  if (accept) upstreamReqHeaders['accept'] = accept;
-
-  const upstreamRes = await fetch(upstreamUrl, { headers: upstreamReqHeaders });
+  // Rebuild request with original method and headers (excluding Host) to preserve Next/RSC semantics
+  const method = c.req.method;
+  const headers = new Headers();
+  c.req.raw.headers.forEach((v, k) => {
+    if (k.toLowerCase() !== 'host') headers.set(k, v);
+  });
+  const upstreamReq = new Request(upstreamUrl.toString(), { method, headers });
+  const upstreamRes = await fetch(upstreamReq);
   const contentType = upstreamRes.headers.get('content-type') || '';
 
   if (!contentType.includes('text/html')) {
@@ -176,7 +176,7 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
     // Inject a defensive script to hide/remove Mintlify elements after hydration
     .on('body', {
       element(el) {
-        const injected = `\n<script>(function(){\n  try{\n    var brand = String.fromCharCode(109,105,110,116,108,105,102,121);\n    function hide(){\n      try{\n        var sels = [\n          'script[src*="'+brand+'"]',\n          'script[id*="'+brand+'"]',\n          'a[href*="'+brand+'"]',\n          '[id*="'+brand+'"]',\n          '[class*="'+brand+'"]',\n          '[aria-label*="'+brand+'"]'\n        ];\n        for(var i=0;i<sels.length;i++){\n          var nodes = document.querySelectorAll(sels[i]);\n          for(var j=0;j<nodes.length;j++){\n            var n = nodes[j];\n            n.remove();\n          }\n        }\n        var scripts = document.getElementsByTagName('script');\n        for(var k=scripts.length-1;k>=0;k--){\n          var s = scripts[k];\n          var id = s.id||'';\n          var src = s.src||'';\n          var txt = s.textContent||'';\n          if(id.indexOf(brand)!==-1 || src.indexOf(brand)!==-1 || txt.indexOf(brand)!==-1){\n            s.remove();\n          }\n        }\n      }catch(e){}\n    }\n    hide();\n    if(document.readyState==='loading'){\n      document.addEventListener('DOMContentLoaded', hide);\n    } else {\n      queueMicrotask(hide);\n    }\n    var mo = new MutationObserver(function(){ hide(); });\n    mo.observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['id','class','href','aria-label','src'] });\n    setTimeout(hide, 50);\n    setTimeout(hide, 500);\n    setTimeout(hide, 1000);\n    setTimeout(hide, 3000);\n    setTimeout(hide, 10000);\n  }catch(e){}\n})();</script>\n`;
+        const injected = `\n<script>(function(){\n  try{\n    var brand = String.fromCharCode(109,105,110,116,108,105,102,121);\n    var toBrand = 'tadle';\n    var re = new RegExp(brand, 'gi');\n    function replace(){\n      try{\n        // 替换匹配到的属性，不删除元素\n        var sels = [\n          'script[src*="'+brand+'"]',\n          'script[id*="'+brand+'"]',\n          'a[href*="'+brand+'"]',\n          '[id*="'+brand+'"]',\n          '[class*="'+brand+'"]',\n          '[aria-label*="'+brand+'"]'\n        ];\n        for(var i=0;i<sels.length;i++){\n          var nodes = document.querySelectorAll(sels[i]);\n          for(var j=0;j<nodes.length;j++){\n            var n = nodes[j];\n            // 安全地更新常见属性；避免改动内联脚本文本\n            var id = n.getAttribute && n.getAttribute('id');\n            if(id && re.test(id)) try{ n.setAttribute('id', id.replace(re, toBrand)); }catch(_){}\n            var cls = n.getAttribute && n.getAttribute('class');\n            if(cls && re.test(cls)) try{ n.setAttribute('class', cls.replace(re, toBrand)); }catch(_){}\n            var aria = n.getAttribute && n.getAttribute('aria-label');\n            if(aria && re.test(aria)) try{ n.setAttribute('aria-label', aria.replace(re, toBrand)); }catch(_){}\n            // 仅针对 a 标签调整 href 和文本；不要重写 script 的 src\n            if(n.tagName === 'A'){\n              var href = n.getAttribute('href') || '';\n              if(re.test(href)) try{ n.setAttribute('href', href.replace(re, toBrand)); }catch(_){}\n              var txt = n.textContent || '';\n              if(re.test(txt)) try{ n.textContent = txt.replace(re, toBrand); }catch(_){}\n            }\n          }\n        }\n        // 对脚本标签：仅重命名 id，避免修改 src 或文本\n        var scripts = document.getElementsByTagName('script');\n        for(var k=scripts.length-1;k>=0;k--){\n          var s = scripts[k];\n          var sid = s.id||'';\n          if(re.test(sid)) try{ s.id = sid.replace(re, toBrand); }catch(_){}\n        }\n      }catch(e){}\n    }\n    // 在就绪与延迟阶段各执行一次替换\n    replace();\n    if(document.readyState==='loading'){\n      document.addEventListener('DOMContentLoaded', replace);\n    } else {\n      queueMicrotask(replace);\n    }\n    var mo = new MutationObserver(function(){ replace(); });\n    mo.observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['id','class','href','aria-label','src'] });\n    setTimeout(replace, 3000);\n    setTimeout(replace, 10000);\n  }catch(e){}\n})();</script>\n`;
         el.append(injected, { html: true });
       },
     });
@@ -203,12 +203,15 @@ app.get('/_next/*', async (c) => {
       // Forward minimal headers for better compatibility
       'user-agent': c.req.header('user-agent') || '',
       accept: c.req.header('accept') || '*/*',
+      'accept-encoding': c.req.header('accept-encoding') || '',
+      'if-none-match': c.req.header('if-none-match') || '',
+      'if-modified-since': c.req.header('if-modified-since') || '',
     },
   });
-  return new Response(upstreamRes.body, {
-    status: upstreamRes.status,
-    headers: upstreamRes.headers,
-  });
+  const headers = new Headers(upstreamRes.headers);
+  if (!headers.get('cache-control')) headers.set('cache-control', 'public, max-age=31536000, immutable');
+  if (!headers.get('vary')) headers.set('vary', 'Accept-Encoding');
+  return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
 });
 
 app.get('/mintlify-assets/*', async (c) => {
@@ -219,12 +222,15 @@ app.get('/mintlify-assets/*', async (c) => {
     headers: {
       'user-agent': c.req.header('user-agent') || '',
       accept: c.req.header('accept') || '*/*',
+      'accept-encoding': c.req.header('accept-encoding') || '',
+      'if-none-match': c.req.header('if-none-match') || '',
+      'if-modified-since': c.req.header('if-modified-since') || '',
     },
   });
-  return new Response(upstreamRes.body, {
-    status: upstreamRes.status,
-    headers: upstreamRes.headers,
-  });
+  const headers = new Headers(upstreamRes.headers);
+  if (!headers.get('cache-control')) headers.set('cache-control', 'public, max-age=31536000, immutable');
+  if (!headers.get('vary')) headers.set('vary', 'Accept-Encoding');
+  return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
 });
 
 // Generic passthroughs for other common asset roots used by the docs site
@@ -236,12 +242,15 @@ app.get('/static/*', async (c) => {
     headers: {
       'user-agent': c.req.header('user-agent') || '',
       accept: c.req.header('accept') || '*/*',
+      'accept-encoding': c.req.header('accept-encoding') || '',
+      'if-none-match': c.req.header('if-none-match') || '',
+      'if-modified-since': c.req.header('if-modified-since') || '',
     },
   });
-  return new Response(upstreamRes.body, {
-    status: upstreamRes.status,
-    headers: upstreamRes.headers,
-  });
+  const headers = new Headers(upstreamRes.headers);
+  if (!headers.get('cache-control')) headers.set('cache-control', 'public, max-age=31536000, immutable');
+  if (!headers.get('vary')) headers.set('vary', 'Accept-Encoding');
+  return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
 });
 
 app.get('/images/*', async (c) => {
@@ -252,12 +261,15 @@ app.get('/images/*', async (c) => {
     headers: {
       'user-agent': c.req.header('user-agent') || '',
       accept: c.req.header('accept') || '*/*',
+      'accept-encoding': c.req.header('accept-encoding') || '',
+      'if-none-match': c.req.header('if-none-match') || '',
+      'if-modified-since': c.req.header('if-modified-since') || '',
     },
   });
-  return new Response(upstreamRes.body, {
-    status: upstreamRes.status,
-    headers: upstreamRes.headers,
-  });
+  const headers = new Headers(upstreamRes.headers);
+  if (!headers.get('cache-control')) headers.set('cache-control', 'public, max-age=31536000, immutable');
+  if (!headers.get('vary')) headers.set('vary', 'Accept-Encoding');
+  return new Response(upstreamRes.body, { status: upstreamRes.status, headers });
 });
 
 // Serve local JPG branding asset for og/twitter image
@@ -382,7 +394,9 @@ app.post('/_mintlify/api/request', async (c) => {
 
     // Normalize headers into a plain object for the widget
     const hdrs: Record<string, string> = {};
-    upstreamRes.headers.forEach((v, k) => { hdrs[k] = v; });
+    upstreamRes.headers.forEach((v, k) => {
+      hdrs[k] = v;
+    });
 
     // Read response body as text and base64-encode (handles binary/utf8 safely)
     const text = await upstreamRes.text();
@@ -430,14 +444,14 @@ app.get('/*', async (c) => {
   const url = new URL(c.req.url);
   const docsOrigin = c.env.DOCS_ORIGIN ?? DOCS_ORIGIN_DEFAULT;
   const upstreamUrl = new URL(docsOrigin + url.pathname + url.search);
-
-  const upstreamReqHeaders: Record<string, string> = {};
-  const ua = c.req.header('user-agent');
-  if (ua) upstreamReqHeaders['user-agent'] = ua;
-  const accept = c.req.header('accept');
-  if (accept) upstreamReqHeaders['accept'] = accept;
-
-  const upstreamRes = await fetch(upstreamUrl, { headers: upstreamReqHeaders });
+  // Rebuild request with original method and headers (excluding Host)
+  const method = c.req.method;
+  const headers = new Headers();
+  c.req.raw.headers.forEach((v, k) => {
+    if (k.toLowerCase() !== 'host') headers.set(k, v);
+  });
+  const upstreamReq = new Request(upstreamUrl.toString(), { method, headers });
+  const upstreamRes = await fetch(upstreamReq);
   const contentType = upstreamRes.headers.get('content-type') || '';
 
   if (!contentType.includes('text/html')) {
