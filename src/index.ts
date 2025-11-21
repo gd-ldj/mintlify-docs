@@ -178,6 +178,67 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
       element(el) {
         const injected = `\n<script>(function(){\n  try{\n    var brand = String.fromCharCode(109,105,110,116,108,105,102,121);\n    var toBrand = 'tadle';\n    var re = new RegExp(brand, 'gi');\n    function replace(){\n      try{\n        // 替换匹配到的属性，不删除元素\n        var sels = [\n          'script[src*="'+brand+'"]',\n          'script[id*="'+brand+'"]',\n          'a[href*="'+brand+'"]',\n          '[id*="'+brand+'"]',\n          '[class*="'+brand+'"]',\n          '[aria-label*="'+brand+'"]'\n        ];\n        for(var i=0;i<sels.length;i++){\n          var nodes = document.querySelectorAll(sels[i]);\n          for(var j=0;j<nodes.length;j++){\n            var n = nodes[j];\n            // 安全地更新常见属性；避免改动内联脚本文本\n            var id = n.getAttribute && n.getAttribute('id');\n            if(id && re.test(id)) try{ n.setAttribute('id', id.replace(re, toBrand)); }catch(_){}\n            var cls = n.getAttribute && n.getAttribute('class');\n            if(cls && re.test(cls)) try{ n.setAttribute('class', cls.replace(re, toBrand)); }catch(_){}\n            var aria = n.getAttribute && n.getAttribute('aria-label');\n            if(aria && re.test(aria)) try{ n.setAttribute('aria-label', aria.replace(re, toBrand)); }catch(_){}\n            // 仅针对 a 标签调整 href 和文本；不要重写 script 的 src\n            if(n.tagName === 'A'){\n              var href = n.getAttribute('href') || '';\n              if(re.test(href)) try{ n.setAttribute('href', href.replace(re, toBrand)); }catch(_){}\n              var txt = n.textContent || '';\n              if(re.test(txt)) try{ n.textContent = txt.replace(re, toBrand); }catch(_){}\n            }\n          }\n        }\n        // 对脚本标签：仅重命名 id，避免修改 src 或文本\n        var scripts = document.getElementsByTagName('script');\n        for(var k=scripts.length-1;k>=0;k--){\n          var s = scripts[k];\n          var sid = s.id||'';\n          if(re.test(sid)) try{ s.id = sid.replace(re, toBrand); }catch(_){}\n        }\n      }catch(e){}\n    }\n    // 在就绪与延迟阶段各执行一次替换\n    replace();\n    if(document.readyState==='loading'){\n      document.addEventListener('DOMContentLoaded', replace);\n    } else {\n      queueMicrotask(replace);\n    }\n    var mo = new MutationObserver(function(){ replace(); });\n    mo.observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['id','class','href','aria-label','src'] });\n    setTimeout(replace, 3000);\n    setTimeout(replace, 10000);\n  }catch(e){}\n})();</script>\n`;
         el.append(injected, { html: true });
+
+        // 追加一个仅做精准替换的轻量脚本：只替换两个已知 ID 的字面量
+        const precise = `
+<script>(function(){
+  try{
+    var brand = String.fromCharCode(109,105,110,116,108,105,102,121);
+    var toBrand = 'tadle';
+    var toBrandText = 'Tadle';
+    var id1 = brand + '-scroll-top-script';
+    var id2 = brand + '-footer-and-sidebar-scroll-script';
+    var esc = function(s){ return s.replace(/[-\\\/^$*+?.()|[\\]{}]/g, '\\$&'); };
+    var re1 = new RegExp(esc(id1), 'g');
+    var re2 = new RegExp(esc(id2), 'g');
+    var re1u = new RegExp(esc('_' + id1), 'g');
+    var re2u = new RegExp(esc('_' + id2), 'g');
+    function upd(){
+      try{
+        var inlineScripts = document.querySelectorAll('script:not([src])');
+        for(var i=0;i<inlineScripts.length;i++){
+          var s = inlineScripts[i];
+          var t0 = s.textContent || '';
+          var t1 = t0.replace(re1, toBrand + '-scroll-top-script')
+                     .replace(re2, toBrand + '-footer-and-sidebar-scroll-script')
+                     .replace(re1u, '_' + toBrand + '-scroll-top-script')
+                     .replace(re2u, '_' + toBrand + '-footer-and-sidebar-scroll-script');
+          if(t1 !== t0){ try{ s.textContent = t1; }catch(_){} }
+        }
+        var styles = document.getElementsByTagName('style');
+        for(var j=0;j<styles.length;j++){
+          var st = styles[j];
+          var s0 = st.textContent || '';
+          var rS1 = new RegExp(esc('#' + id1), 'g');
+          var rS2 = new RegExp(esc('#' + id2), 'g');
+          var s1 = s0.replace(rS1, '#' + toBrand + '-scroll-top-script')
+                     .replace(rS2, '#' + toBrand + '-footer-and-sidebar-scroll-script');
+          if(s1 !== s0){ try{ st.textContent = s1; }catch(_){} }
+        }
+
+        var as = document.getElementsByTagName('a');
+        for(var m=0;m<as.length;m++){
+          var an = as[m];
+          var text0 = an.textContent || '';
+          var text1 = text0.replace(/tadle/g, toBrandText);
+          if(text1 !== text0){ try{ an.textContent = text1; }catch(_){} }
+        }
+      }catch(e){}
+    }
+    upd();
+    if(document.readyState==='loading'){
+      document.addEventListener('DOMContentLoaded', upd);
+    } else {
+      queueMicrotask(upd);
+    }
+    var mo = new MutationObserver(function(){ upd(); });
+    mo.observe(document.documentElement, { childList:true, subtree:true });
+    setTimeout(upd, 3000);
+    setTimeout(upd, 10000);
+  }catch(e){}
+})();</script>
+`;
+        el.append(precise, { html: true });
       },
     });
 
