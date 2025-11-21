@@ -81,9 +81,11 @@ const LOGO_JPG_BASE64 =
 // Unified HTML rewrite to remove Mintlify branding and links in <head>
 function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
   const rewriter = new HTMLRewriter()
-    // Stop injecting CSS; removal is handled server-side and via client cleanup
+    // Inject an early, minimal theme bootstrap to prevent dark→light flash
     .on('head', {
       element(el) {
+        const themeBoot = `\n<script>(function(){\n  try{\n    var key='theme';\n    var stored = null;\n    try{ stored = localStorage.getItem(key); }catch(_){}\n    var systemDark = false;\n    try{ systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }catch(_){}\n    var choice = (stored && stored !== 'system') ? stored : (systemDark ? 'dark' : 'light');\n    var isDark = choice === 'dark';\n    var doc = document.documentElement;\n    if(doc){\n      if(isDark){ doc.classList.add('dark'); } else { doc.classList.remove('dark'); }\n      try{ doc.setAttribute('data-theme', choice); }catch(_){}\n    }\n  }catch(e){}\n})();</script>\n`;
+        el.prepend(themeBoot, { html: true });
       },
     })
     // Keep navigation within /docs prefix when linking to root-relative paths
@@ -181,8 +183,6 @@ function transformDocsHtml(upstreamRes: Response, docsOrigin: string) {
 
   const transformed = rewriter.transform(upstreamRes);
   const headers = new Headers(upstreamRes.headers);
-  // Prevent CDN/browser caching to ensure replacements are visible in production
-  headers.set('cache-control', 'no-store');
   // Mark responses to help prod verification
   headers.set('x-rewritten-by', 'open-odds-worker');
   // Normalize content-type for HTML
@@ -379,9 +379,36 @@ app.post('/_mintlify/api/request', async (c) => {
     const body = hasBody ? (typeof payload.body === 'string' ? payload.body : payload.body !== undefined ? JSON.stringify(payload.body) : undefined) : undefined;
 
     const upstreamRes = await fetch(targetUrl.toString(), { method, headers, body, redirect: 'follow' });
-    return new Response(upstreamRes.body, { status: upstreamRes.status, headers: upstreamRes.headers });
+
+    // Normalize headers into a plain object for the widget
+    const hdrs: Record<string, string> = {};
+    upstreamRes.headers.forEach((v, k) => { hdrs[k] = v; });
+
+    // Read response body as text and base64-encode (handles binary/utf8 safely)
+    const text = await upstreamRes.text();
+    const dataB64 = (() => {
+      try {
+        return btoa(unescape(encodeURIComponent(text)));
+      } catch (_) {
+        // Fallback for latin-1 only
+        return btoa(text);
+      }
+    })();
+
+    const payloadOut = {
+      error: upstreamRes.status >= 400,
+      response: {
+        status: upstreamRes.status,
+        statusText: (upstreamRes as any).statusText || '',
+        headers: hdrs,
+        data: dataB64,
+      },
+    };
+
+    // Frontend expects HTTP 200 while conveying real upstream status in payload
+    return c.json(payloadOut, 200);
   } catch (err) {
-    return c.json({ error: 'bad_request', message: (err as Error).message }, 400);
+    return c.json({ error: 'bad_request', message: (err as Error).message }, { status: 400 });
   }
 });
 
